@@ -26,11 +26,18 @@ Add a GTK+ tabbed interface to any application implementing XEmbed.
 
 - The application frequently segfaults on close. I intend to investigate
   further but it hasn't yet affected the application whilst running.
+  This also only appears to happen while running the st terminal...
 - There is some weird stuff happening with the focus of widgets in that
   the embedded looks like it isn't focussed even though key-press-events
   are still sent to it. I imagine it's just multiple widgets trying to
   compete for focus. If it bothers you, just clicking on the title bar
   seems to fit it (or pressing tab).
+
+##TODO
+
+- Allow for passing multiple commands (to open in multiple tabs), or
+  opening a new process in a new tab of a running hotshot instance. This
+  would be useful for document viewers.
 
 ##Credits
 
