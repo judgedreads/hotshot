@@ -1,0 +1,169 @@
+#! /usr/bin/env python3
+
+from gi.repository import (Gtk, Gio, GLib, Gdk, GdkX11)
+import Xlib
+import Xlib.display
+import subprocess
+import argparse
+
+
+class HotShot(Gtk.Application):
+
+    def __init__(self, args):
+        self.name = args.prog
+        if args.name:
+            self.name = args.name
+        self.icon = args.icon
+        Gtk.Application.__init__(
+            self,
+            application_id="apps.judgedreads.%s" % self.name,
+            flags=Gio.ApplicationFlags.FLAGS_NONE)
+        GLib.set_application_name('%s' % self.name)
+        GLib.set_prgname('%s' % self.name)
+        self.xid_pid = {}
+        self.keys = {}
+        self.connect("activate", self.on_activate)
+        self.connect("shutdown", self.on_shutdown)
+        self.prog = args.prog
+        self.prog_args = args.args
+        self.xid_pos = args.xid
+        self.procs = []
+
+    def on_activate(self, app):
+        self.win = Gtk.ApplicationWindow()
+        if self.icon:
+            self.win.set_icon_name(self.icon)
+        self.win.set_default_size(600, 400)
+        self.win.set_wmclass(self.name, self.name)
+        self.tabbed = Gtk.Notebook()
+        self.tabbed.set_scrollable(True)
+        self.tabbed.connect('switch-page', self.on_tab_change)
+        self.win.add(self.tabbed)
+        self.win.connect('key-press-event', self.on_key_press)
+        self.win.connect('key-release-event', self.on_key_release)
+        self.win.connect('button-press-event', self.on_button_press)
+        self.win.connect('delete-event', self.on_delete)
+        sock = self.new_tab()
+        self.win.show_all()
+        app.add_window(self.win)
+
+    def on_delete(self, *args):
+        self.quit()
+
+    def on_shutdown(self, app):
+        for proc in self.procs:
+            proc.terminate()
+        # for pid in self.xid_pid.values():
+        #    subprocess.call(['kill', str(pid)])
+
+    def get_wm_name(self, sock):
+        # needs GdkX11 imported - known bug
+        xwin = sock.get_plug_window()
+        wid = xwin.get_xid()
+        disp = Xlib.display.Display()
+        xwin = disp.create_resource_object('window', wid)
+        name = xwin.get_full_property(disp.intern_atom('WM_NAME'),
+                                      Xlib.X.AnyPropertyType).value
+        disp.close()
+        return name
+
+    def on_key_press(self, widget, event):
+        if event.hardware_keycode == 50:
+            self.keys['control'] = True
+        elif event.hardware_keycode == 37:
+            self.keys['shift'] = True
+        elif event.hardware_keycode == 28:
+            if self.keys.get('control') and self.keys.get('shift'):
+                self.new_tab()
+                return True
+        elif event.hardware_keycode == 43:
+            if self.keys.get('control') and self.keys.get('shift'):
+                self.switch_tab(-1)
+                return True
+        elif event.hardware_keycode == 46:
+            if self.keys.get('control') and self.keys.get('shift'):
+                self.switch_tab(1)
+                return True
+
+    def on_key_release(self, widget, event):
+        if event.hardware_keycode in [50, 105]:
+            self.keys['control'] = False
+        elif event.hardware_keycode in [37, 62]:
+            self.keys['shift'] = False
+        elif event.hardware_keycode == 28:
+            self.keys['t'] = False
+        elif event.hardware_keycode == 36:
+            sock = widget.get_focus()
+            if not isinstance(sock, Gtk.Socket):
+                self.on_button_press()
+                return
+            name = self.get_wm_name(sock)
+            self.win.set_title(name)
+            self.tabbed.set_tab_label_text(sock, name)
+
+    def switch_tab(self, move):
+        num = self.tabbed.get_current_page()
+        tot = self.tabbed.get_n_pages()
+        new_num = (num + move) % tot
+        self.tabbed.set_current_page(new_num)
+
+    def new_tab(self):
+        sock = Gtk.Socket()
+        num = self.tabbed.append_page(
+            sock, Gtk.Label(self.prog))
+        sock.show()
+        self.tabbed.set_tab_reorderable(sock, True)
+        sock.connect('plug-removed', self.on_plug_removed)
+        sock.connect('plug-added', self.on_plug_added)
+        xid = sock.get_id()
+        self.prog_args[self.xid_pos] = str(xid)
+        cmd = self.prog_args
+        cmd.insert(0, self.prog)
+        proc = subprocess.Popen(cmd)
+        self.procs.append(proc)
+        self.xid_pid[xid] = proc.pid
+        self.tabbed.set_current_page(num)
+
+    def on_plug_removed(self, sock):
+        del self.xid_pid[sock.get_id()]
+        tab = self.tabbed.page_num(sock)
+        self.tabbed.remove_page(tab)
+        if self.tabbed.get_n_pages() < 1:
+            self.quit()
+
+    def on_plug_added(self, sock):
+        self.on_button_press()
+        sock.set_can_focus(True)
+        sock.grab_focus()
+
+    def on_button_press(self, widget=None, event=None):
+        num = self.tabbed.get_current_page()
+        tab = self.tabbed.get_nth_page(num)
+        tab.grab_focus()
+
+    def on_tab_change(self, *args):
+        num = self.tabbed.get_current_page()
+        tab = self.tabbed.get_nth_page(num)
+        self.win.set_title(self.tabbed.get_tab_label_text(tab))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Add a tabbed interface to any program exposing Xembed')
+    parser.add_argument(
+        '-n', '--name',
+        help='override the WM_CLASS and name of the application '
+        '- defaults to the embedded program name')
+    parser.add_argument('-i', '--icon', help='set the window icon')
+    parser.add_argument(
+        '-x', '--xid', type=int, default=-1,
+        help='replace the xth arg to prog with the xid to embed into '
+        '- the xid will be appended by default')
+    parser.add_argument('prog', help='the program to embed')
+    parser.add_argument('args', nargs=argparse.REMAINDER,
+                        help='the args to pass to the embedded program')
+    args = parser.parse_args()
+    if args.xid == -1:
+        args.args.append('')
+    app = HotShot(args)
+    app.run()
