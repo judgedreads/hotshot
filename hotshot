@@ -41,8 +41,9 @@ class HotShot(Gtk.Application):
         self.win.add(self.tabbed)
         self.win.connect('key-press-event', self.on_key_press)
         self.win.connect('key-release-event', self.on_key_release)
-        self.win.connect('button-press-event', self.on_button_press)
         self.win.connect('delete-event', self.on_delete)
+        self.win.set_can_focus(True)
+        self.win.grab_focus()
         sock = self.new_tab()
         self.win.show_all()
         app.add_window(self.win)
@@ -95,7 +96,6 @@ class HotShot(Gtk.Application):
         elif event.hardware_keycode == 36:
             sock = widget.get_focus()
             if not isinstance(sock, Gtk.Socket):
-                self.on_button_press()
                 return
             name = self.get_wm_name(sock)
             self.win.set_title(name)
@@ -111,13 +111,13 @@ class HotShot(Gtk.Application):
         sock = Gtk.Socket()
         num = self.tabbed.append_page(
             sock, Gtk.Label(self.prog))
-        sock.show()
         self.tabbed.set_tab_reorderable(sock, True)
         sock.connect('plug-removed', self.on_plug_removed)
         sock.connect('plug-added', self.on_plug_added)
+        sock.show()
         xid = sock.get_id()
-        self.prog_args[self.xid_pos] = str(xid)
-        cmd = self.prog_args
+        cmd = self.prog_args.copy()
+        cmd[self.xid_pos] = str(xid)
         cmd.insert(0, self.prog)
         proc = subprocess.Popen(cmd)
         self.procs.append(proc)
@@ -126,20 +126,14 @@ class HotShot(Gtk.Application):
 
     def on_plug_removed(self, sock):
         del self.xid_pid[sock.get_id()]
-        tab = self.tabbed.page_num(sock)
-        self.tabbed.remove_page(tab)
+        page_num = self.tabbed.page_num(sock)
+        self.tabbed.remove_page(page_num)
         if self.tabbed.get_n_pages() < 1:
             self.quit()
 
     def on_plug_added(self, sock):
-        self.on_button_press()
         sock.set_can_focus(True)
         sock.grab_focus()
-
-    def on_button_press(self, widget=None, event=None):
-        num = self.tabbed.get_current_page()
-        tab = self.tabbed.get_nth_page(num)
-        tab.grab_focus()
 
     def on_tab_change(self, *args):
         num = self.tabbed.get_current_page()

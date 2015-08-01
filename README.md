@@ -26,6 +26,11 @@ Add a GTK+ tabbed interface to any application implementing XEmbed.
 
 - The application frequently segfaults on close. I intend to investigate
   further but it hasn't yet affected the application whilst running.
+- There is some weird stuff happening with the focus of widgets in that
+  the embedded looks like it isn't focussed even though key-press-events
+  are still sent to it. I imagine it's just multiple widgets trying to
+  compete for focus. If it bothers you, just clicking on the title bar
+  seems to fit it (or pressing tab).
 
 ##Credits
 
